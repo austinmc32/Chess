@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>Chess Game</h1>
+        <nav>
+            <ul>
+                <li><a href="#" id="settings-toggle">Settings</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <div id="chessboard-container">
+            <div id="row-labels-left">
+                <div>8</div>
+                <div>7</div>
+                <div>6</div>
+                <div>5</div>
+                <div>4</div>
+                <div>3</div>
+                <div>2</div>
+                <div>1</div>
+            </div>
+            <div id="chessboard"></div>
+            <div id="col-labels">
+                <div>a</div>
+                <div>b</div>
+                <div>c</div>
+                <div>d</div>
+                <div>e</div>
+                <div>f</div>
+                <div>g</div>
+                <div>h</div>
+            </div>
+        </div>
+        <div id="turn"></div>
+        <div id="hint" style="display: none;"></div>
+        <button id="restart" style="display: none;">Restart Game</button>
+        <div id="message"></div>
+        <div id="moves" style="display: none;"></div>
+        <button id="toggle-move-history">Show Full History</button>
+        <div id="move-history-container">
+            <ul id="move-history"></ul>
+        </div>
+        <div id="game-over-modal">
+            <div id="game-over-content">
+                <div id="game-over-message"></div>
+                <button id="restart-button">Restart Game</button>
+            </div>
+        </div>
+        <div id="settings-overlay" class="overlay hidden">
+            <div id="settings-content">
+                <h2>Customize Your Board</h2>
+                <div>
+                    <label for="white-tile-color">White Tile Color:</label>
+                    <input type="color" id="white-tile-color" value="#f0d9b5">
+                </div>
+                <div>
+                    <label for="black-tile-color">Black Tile Color:</label>
+                    <input type="color" id="black-tile-color" value="#b58863">
+                </div>
+                <div>
+                    <label for="white-piece-color">White Piece Color:</label>
+                    <input type="color" id="white-piece-color" value="#ffffff">
+                </div>
+                <div>
+                    <label for="black-piece-color">Black Piece Color:</label>
+                    <input type="color" id="black-piece-color" value="#000000">
+                </div>
+                <button id="apply-settings">Apply Settings</button>
+                <button id="save-preset">Save Preset</button>
+                <button id="close-settings">Close</button>
+            </div>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
