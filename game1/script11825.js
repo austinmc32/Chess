@@ -103,7 +103,7 @@ function getPositionFromTile(tile) {
         col: index % 8
     };
 }
-function isValidMove(fromTile, toTile) {
+function isValidMove(fromTile, toTile, isCheckValidation = false) {
     // Check if the move is a no-op (same tile)
     if (fromTile.id === toTile.id) {
         // Optionally, you can clear any selections or highlights here
@@ -257,54 +257,32 @@ function isValidMove(fromTile, toTile) {
         return false;
     }
     
-    // If this is a king move, verify it doesn't put the king in check
-    if (piece === '\u2654' || piece === '\u265A') {
-        // Temporarily make the move
-        const originalPieceInTarget = toTile.querySelector('.white-piece, .black-piece');
-        if (originalPieceInTarget) {
-            toTile.removeChild(originalPieceInTarget);
-        }
-        toTile.appendChild(pieceElement);
+    // If this is a check validation, skip the check-related validations
+    if (!isCheckValidation) {
+        // Test if this move would expose king to check
+        const isWhite = fromTile.querySelector('.white-piece') !== null;
         
-        // Check if the move puts the king in check
+        // Simulate the move
+        const originalPiece = fromTile.querySelector('.white-piece, .black-piece');
+        const capturedPiece = toTile.querySelector('.white-piece, .black-piece');
+        
+        if (capturedPiece) {
+            toTile.removeChild(capturedPiece);
+        }
+        toTile.appendChild(originalPiece);
+        
+        // Check if the move puts/leaves own king in check
         const inCheck = isKingInCheck(isWhite);
         
-        // Undo the temporary move
-        fromTile.appendChild(pieceElement);
-        if (originalPieceInTarget) {
-            toTile.appendChild(originalPieceInTarget);
+        // Undo the move
+        fromTile.appendChild(originalPiece);
+        if (capturedPiece) {
+            toTile.appendChild(capturedPiece);
         }
         
         if (inCheck) {
-            invalidReason = 'Move would put or leave your king in check.';
-            displayMessage(invalidReason);
+            displayMessage('This move would put or leave your king in check!');
             return false;
-        }
-    }
-
-    // Test if this move would get out of check
-    if (isKingInCheck(isWhite)) {
-        // Temporarily make the move
-        const originalPieceInTarget = toTile.querySelector('.white-piece, .black-piece');
-        if (originalPieceInTarget) {
-            toTile.removeChild(originalPieceInTarget);
-        }
-        const originalParent = pieceElement.parentElement;
-        toTile.appendChild(pieceElement);
-        
-        // Check if the move gets out of check
-        const stillInCheck = isKingInCheck(isWhite);
-        
-        // Undo the temporary move
-        originalParent.appendChild(pieceElement);
-        if (originalPieceInTarget) {
-            toTile.appendChild(originalPieceInTarget);
-        }
-        
-        if (stillInCheck) {
-            invalidReason = 'Move does not resolve check.';
-            displayMessage(invalidReason);
-            return false; // Move doesn't get out of check
         }
     }
     
@@ -448,25 +426,8 @@ function movePiece(fromTile, toTile) {
         moveNotation = `${piece.textContent}${indexToChessNotation(toIndex)}`;
     }
 
-    // Instead of directly appending, use CSS classes to animate
-    if (piece) {
-        // Calculate target position
-        // Assuming each tile is 60x60px as per CSS
-        const toRow = Math.floor(toIndex / 8);
-        const targetTop = toRow * 60; // Adjust based on CSS
-        const targetLeft = toCol * 60; // Adjust based on CSS
-
-        // Apply transition
-        piece.style.top = `${targetTop}px`;
-        piece.style.left = `${targetLeft}px`;
-
-        // After transition, move the piece in the DOM
-        setTimeout(() => {
-            toTile.appendChild(piece);
-            piece.style.top = '50%';
-            piece.style.left = '50%';
-        }, 300); // Match the CSS transition duration
-    }
+    // Directly append the piece to the target tile
+    toTile.appendChild(piece);
 
     clearKingInCheck();
 
@@ -939,26 +900,140 @@ style.innerHTML = `
 document.head.appendChild(style);
 
 function isKingInCheck(isWhite) {
+    // Find the king
     const kingPiece = isWhite ? '\u2654' : '\u265A';
-    const king = Array.from(document.querySelectorAll(isWhite ? '.white-piece' : '.black-piece')).find(piece => piece.textContent === kingPiece);
-    if (!king) {
-        console.error('King piece not found!');
-        return false;
-    }
-
+    const king = Array.from(document.querySelectorAll(isWhite ? '.white-piece' : '.black-piece'))
+        .find(piece => piece.textContent === kingPiece);
+    
+    if (!king) return false;
+    
     const kingTile = king.parentElement;
     const opponentPieces = document.querySelectorAll(isWhite ? '.black-piece' : '.white-piece');
+    
+    // Get king's position
+    const kingIndex = parseInt(kingTile.id.split('-')[1]);
+    const kingRow = Math.floor(kingIndex / 8);
+    const kingCol = kingIndex % 8;
+    
+    // Check if any opponent piece can reach the king
     for (const piece of opponentPieces) {
-        const fromTile = piece.parentElement;
-        if (isValidMove(fromTile, kingTile)) {
-            kingTile.classList.add('king-in-check'); // Ensure the king's tile is highlighted
-            document.getElementById('message').textContent = `${isWhite ? 'White' : 'Black'} is in check!`;
-            return true;
+        const pieceTile = piece.parentElement;
+        const pieceIndex = parseInt(pieceTile.id.split('-')[1]);
+        const pieceRow = Math.floor(pieceIndex / 8);
+        const pieceCol = pieceIndex % 8;
+        
+        // Calculate distances
+        const rowDiff = Math.abs(kingRow - pieceRow);
+        const colDiff = Math.abs(kingCol - pieceCol);
+        
+        // Check if the piece can move to the king's position according to chess rules
+        switch (piece.textContent) {
+            case '\u265F': // Black pawn
+                if (rowDiff === 1 && colDiff === 1 && kingRow > pieceRow) return true;
+                break;
+            case '\u2659': // White pawn
+                if (rowDiff === 1 && colDiff === 1 && kingRow < pieceRow) return true;
+                break;
+            case '\u265C': // Black rook
+            case '\u2656': // White rook
+                if ((rowDiff === 0 || colDiff === 0) && isPathClear(pieceRow, pieceCol, kingRow, kingCol)) return true;
+                break;
+            case '\u265E': // Black knight
+            case '\u2658': // White knight
+                if ((rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2)) return true;
+                break;
+            case '\u265D': // Black bishop
+            case '\u2657': // White bishop
+                if (rowDiff === colDiff && isPathClear(pieceRow, pieceCol, kingRow, kingCol)) return true;
+                break;
+            case '\u265B': // Black queen
+            case '\u2655': // White queen
+                if ((rowDiff === colDiff || rowDiff === 0 || colDiff === 0) && isPathClear(pieceRow, pieceCol, kingRow, kingCol)) return true;
+                break;
+            case '\u265A': // Black king
+            case '\u2654': // White king
+                if (rowDiff <= 1 && colDiff <= 1) return true;
+                break;
         }
     }
-    kingTile.classList.remove('king-in-check'); // Remove the highlight if not in check
-    document.getElementById('message').textContent = '';
+    
     return false;
+}
+
+// Separate function to check if a piece can capture the king
+function canPieceCaptureKing(fromTile, kingTile) {
+    const piece = fromTile.querySelector('.white-piece, .black-piece');
+    if (!piece) return false;
+    
+    const fromIndex = parseInt(fromTile.id.split('-')[1]);
+    const toIndex = parseInt(kingTile.id.split('-')[1]);
+    
+    const fromRow = Math.floor(fromIndex / 8);
+    const fromCol = fromIndex % 8;
+    const toRow = Math.floor(toIndex / 8);
+    const toCol = toIndex % 8;
+    
+    // Calculate distances
+    const rowDiff = Math.abs(toRow - fromRow);
+    const colDiff = Math.abs(toCol - fromCol);
+    
+    // First check if the piece can theoretically reach the king based on movement patterns
+    let canReachKing = false;
+    
+    switch (piece.textContent) {
+        case '\u265F': // Black pawn
+            canReachKing = (rowDiff === 1 && colDiff === 1 && toRow > fromRow);
+            break;
+        case '\u2659': // White pawn
+            canReachKing = (rowDiff === 1 && colDiff === 1 && toRow < fromRow);
+            break;
+        case '\u265C': // Black rook
+        case '\u2656': // White rook
+            canReachKing = (rowDiff === 0 || colDiff === 0);
+            break;
+        case '\u265E': // Black knight
+        case '\u2658': // White knight
+            canReachKing = ((rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2));
+            break;
+        case '\u265D': // Black bishop
+        case '\u2657': // White bishop
+            canReachKing = (rowDiff === colDiff);
+            break;
+        case '\u265B': // Black queen
+        case '\u2655': // White queen
+            canReachKing = (rowDiff === colDiff || rowDiff === 0 || colDiff === 0);
+            break;
+        case '\u265A': // Black king
+        case '\u2654': // White king
+            canReachKing = (rowDiff <= 1 && colDiff <= 1);
+            break;
+    }
+    
+    // If the piece can theoretically reach the king, check if the path is clear
+    return canReachKing && isValidMove(fromTile, kingTile, true);
+}
+
+function isKingInCheckmate(isWhite) {
+    if (!isKingInCheck(isWhite)) return false;
+    
+    const pieces = document.querySelectorAll(isWhite ? '.white-piece' : '.black-piece');
+    
+    // Try all possible moves for all pieces
+    for (const piece of pieces) {
+        const fromTile = piece.parentElement;
+        
+        // Try moving to every square
+        for (let i = 0; i < 64; i++) {
+            const toTile = document.getElementById(`tile-${i}`);
+            
+            // If move is valid and gets out of check, not checkmate
+            if (isValidMove(fromTile, toTile)) {
+                return false;
+            }
+        }
+    }
+    
+    return true; // No valid moves found
 }
 
 function highlightKingInCheck(isWhite) {
