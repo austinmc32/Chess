@@ -13,11 +13,11 @@
     <nav>
         <ul>
             <li><a href="#" id="settings-toggle">Settings</a></li>
-            <li><a href="#" id="history-toggle">Game History</a></li>
+            <li><a href="history11825.html">Game History</a></li> <!-- Added link to history page -->
         </ul>
     </nav>
     <main>
-        <div id="chessboard-container">
+        <div id="chessboard-container" style="width: 480px; height: 480px;"> <!-- Fixed dimensions -->
             <div id="row-labels-left">
                 <div>8</div>
                 <div>7</div>
@@ -45,7 +45,7 @@
         <button id="restart" style="display: none;">Restart Game</button>
         <div id="message"></div>
         <div id="moves" style="display: none;"></div>
-        <button id="toggle-move-history">Show Full History</button>
+        <button id="toggle-move-history">Show Full History</button> <!-- Consider removing if not needed -->
         <div id="move-history-container">
             <ul id="move-history"></ul>
         </div>
@@ -93,42 +93,6 @@
                 <button id="apply-settings">Apply Settings</button>
                 <button id="save-preset">Save Preset</button>
                 <button id="close-settings">Close</button>
-            </div>
-        </div>
-        <!-- Add Game History Modal --> 
-        <div id="history-overlay" class="overlay hidden">
-            <div id="history-content">
-                <h2>Game History</h2>
-                <div class="history-layout">
-                    <div class="history-controls">
-                        <label for="game-select">Saved Games:</label>
-                        <select id="game-select">
-                            <option value="">Select a game...</option>
-                        </select>
-                        <button id="replay-game">Replay</button>
-                        <button id="delete-game">Delete</button>
-                        <div id="replay-controls" style="display: none;">
-                            <button id="prev-move">← Previous Move</button>
-                            <button id="next-move">Next Move →</button>
-                            <button id="stop-replay">Exit Replay</button>
-                        </div>
-                        <div id="replay-move-list"></div>
-                    </div>
-                    <div class="history-board">
-                        <div id="replay-board-container">
-                            <div id="replay-row-labels">
-                                <div>8</div><div>7</div><div>6</div><div>5</div>
-                                <div>4</div><div>3</div><div>2</div><div>1</div>
-                            </div>
-                            <div id="replay-board"></div>
-                            <div id="replay-col-labels">
-                                <div>a</div><div>b</div><div>c</div><div>d</div>
-                                <div>e</div><div>f</div><div>g</div><div>h</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <button id="close-history">Close</button>
             </div>
         </div>
     </main>

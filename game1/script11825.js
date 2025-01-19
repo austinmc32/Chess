@@ -38,6 +38,7 @@ function placePieces() {
             pieceElement.className = i < 16 ? 'black-piece' : 'white-piece'; // Black pieces on top
             pieceElement.textContent = piece;
             tile.appendChild(pieceElement);
+            pieceElement.style.transition = 'top 0.3s ease, left 0.3s ease'; // Smooth transitions
         }
     }
 }
@@ -50,13 +51,6 @@ let lastMoves = []; // Track the last few moves to avoid repetition
 let isCheckingForCheckmate = false;
 let hintManager;
 let showFullHistory = false;
-
-// Add these variables at the top with other global variables
-let gameHistory = [];
-let isReplaying = false;
-let replayIndex = 0;
-let replayInterval = null;
-let activeGameMoves = []; // Add this with other global variables at the top
 
 // Add flags to track if kings and rooks have moved
 let hasWhiteKingMoved = false;
@@ -85,7 +79,7 @@ function onPieceClick(event) {
             clearPotentialMoves(); // Clear potential moves
             selectedPiece = null;
             selectedTile = null;
-            displayMessage('Invalid move!'); // Display invalid move message
+            // Display specific invalid move message
         }
     } else {
         // Select a piece
@@ -110,6 +104,15 @@ function getPositionFromTile(tile) {
     };
 }
 function isValidMove(fromTile, toTile) {
+    // Check if the move is a no-op (same tile)
+    if (fromTile.id === toTile.id) {
+        // Optionally, you can clear any selections or highlights here
+        displayMessage(''); // Clear any existing messages
+        return false; // Treat as no move without displaying an error
+    }
+
+    let invalidReason = ''; // Add this line to track the reason
+
     const pieceElement = fromTile.querySelector('.white-piece, .black-piece');
     if (!pieceElement) return false;
     
@@ -117,6 +120,8 @@ function isValidMove(fromTile, toTile) {
     
     // Ensure players can only move on their turn
     if ((isWhite && !isWhiteTurn) || (!isWhite && isWhiteTurn)) {
+        invalidReason = 'It\'s not your turn.';
+        displayMessage(invalidReason);
         return false;
     }
 
@@ -136,12 +141,16 @@ function isValidMove(fromTile, toTile) {
     // Basic boundary checks
     if (fromRow < 0 || fromRow > 7 || fromCol < 0 || fromCol > 7 ||
         toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7) {
+        invalidReason = 'Move is out of board boundaries.';
+        displayMessage(invalidReason);
         return false;
     }
     
     // Prevent capturing own pieces
     const targetPiece = toTile.querySelector('.white-piece, .black-piece');
     if (targetPiece && targetPiece.classList.contains(isWhite ? 'white-piece' : 'black-piece')) {
+        invalidReason = 'Cannot capture your own piece.';
+        displayMessage(invalidReason);
         return false;
     }
     
@@ -151,6 +160,8 @@ function isValidMove(fromTile, toTile) {
         const toPos = getPositionFromTile(toTile);
         
         if (!fromPos || !toPos || !isPathClear(fromPos.row, fromPos.col, toPos.row, toPos.col)) {
+            invalidReason = 'Path is blocked by another piece.';
+            displayMessage(invalidReason);
             return false;
         }
     }
@@ -169,6 +180,16 @@ function isValidMove(fromTile, toTile) {
                 if (toRow === fromRow - 1 && Math.abs(colDiff) === 1 && targetPiece && targetPiece.classList.contains('black-piece')) {
                     isValidPieceMove = true;
                 }
+                if (toCol !== fromCol && !targetPiece) {
+                    invalidReason = 'Pawn can only capture when moving diagonally.';
+                    displayMessage(invalidReason);
+                    return false;
+                }
+                if (toCol === fromCol && targetPiece) {
+                    invalidReason = 'Pawn cannot move forward to a square occupied by another piece.';
+                    displayMessage(invalidReason);
+                    return false;
+                }
             }
             break;
             
@@ -182,6 +203,16 @@ function isValidMove(fromTile, toTile) {
                 // Diagonal captures
                 if (toRow === fromRow + 1 && Math.abs(colDiff) === 1 && targetPiece && targetPiece.classList.contains('white-piece')) {
                     isValidPieceMove = true;
+                }
+                if (toCol !== fromCol && !targetPiece) {
+                    invalidReason = 'Pawn can only capture when moving diagonally.';
+                    displayMessage(invalidReason);
+                    return false;
+                }
+                if (toCol === fromCol && targetPiece) {
+                    invalidReason = 'Pawn cannot move forward to a square occupied by another piece.';
+                    displayMessage(invalidReason);
+                    return false;
                 }
             }
             break;
@@ -220,7 +251,11 @@ function isValidMove(fromTile, toTile) {
             break;
     }
     
-    if (!isValidPieceMove) return false;
+    if (!isValidPieceMove) {
+        invalidReason = 'Piece cannot move in that manner.';
+        displayMessage(invalidReason);
+        return false;
+    }
     
     // If this is a king move, verify it doesn't put the king in check
     if (piece === '\u2654' || piece === '\u265A') {
@@ -240,7 +275,11 @@ function isValidMove(fromTile, toTile) {
             toTile.appendChild(originalPieceInTarget);
         }
         
-        if (inCheck) return false;
+        if (inCheck) {
+            invalidReason = 'Move would put or leave your king in check.';
+            displayMessage(invalidReason);
+            return false;
+        }
     }
 
     // Test if this move would get out of check
@@ -263,6 +302,8 @@ function isValidMove(fromTile, toTile) {
         }
         
         if (stillInCheck) {
+            invalidReason = 'Move does not resolve check.';
+            displayMessage(invalidReason);
             return false; // Move doesn't get out of check
         }
     }
@@ -282,7 +323,7 @@ function isPathClear(fromRow, fromCol, toRow, toCol) {
         // Boundary checks
         if (currentRow < 0 || currentRow >= 8 || currentCol < 0 || currentCol >= 8) {
             console.error(`Row or column index out of bounds: row-${currentRow}, col-${currentCol}`);
-            return false; // Path is not clear if the row or column index is out of bounds
+            return false; // Path is not clear if out of bounds
         }
 
         const tileIndex = currentRow * 8 + currentCol;
@@ -295,14 +336,38 @@ function isPathClear(fromRow, fromCol, toRow, toCol) {
         if (tile.querySelector('.white-piece, .black-piece')) {
             return false; // Path is not clear
         }
+
+        // Prevent stepping beyond the board
+        if ((rowStep !== 0 && (currentRow + rowStep < 0 || currentRow + rowStep >= 8)) ||
+            (colStep !== 0 && (currentCol + colStep < 0 || currentCol + colStep >= 8))) {
+            console.error(`Next step would be out of bounds: row-${currentRow + rowStep}, col-${currentCol + colStep}`);
+            return false;
+        }
+
         currentRow += rowStep;
         currentCol += colStep;
+
+        // Additional boundary check to prevent currentCol from reaching 8
+        if (currentCol >= 8 || currentCol < 0) {
+            console.error(`Current column out of bounds after increment: col-${currentCol}`);
+            return false;
+        }
     }
 
     return true; // Path is clear
 }
 
 function movePiece(fromTile, toTile) {
+    // Check if the move is a no-op (same tile)
+    if (fromTile.id === toTile.id) {
+        clearAllSelectedTiles(); // Remove all tile highlights
+        clearPotentialMoves(); // Clear potential moves
+        selectedPiece = null;
+        selectedTile = null;
+        displayMessage(''); // Clear message on no move
+        return; // Exit the function without making any changes
+    }
+
     const piece = fromTile.querySelector('.white-piece, .black-piece');
     if (!piece) return;
 
@@ -369,6 +434,8 @@ function movePiece(fromTile, toTile) {
     // Handle regular piece movement and capture
     const capturedPiece = toTile.querySelector('.white-piece, .black-piece');
     let moveNotation = '';
+    let moveFrom = fromTile.id;
+    let moveTo = toTile.id;
 
     if (capturedPiece) {
         if (capturedPiece.textContent === '\u2654' || capturedPiece.textContent === '\u265A') {
@@ -381,7 +448,26 @@ function movePiece(fromTile, toTile) {
         moveNotation = `${piece.textContent}${indexToChessNotation(toIndex)}`;
     }
 
-    toTile.appendChild(piece);
+    // Instead of directly appending, use CSS classes to animate
+    if (piece) {
+        // Calculate target position
+        // Assuming each tile is 60x60px as per CSS
+        const toRow = Math.floor(toIndex / 8);
+        const targetTop = toRow * 60; // Adjust based on CSS
+        const targetLeft = toCol * 60; // Adjust based on CSS
+
+        // Apply transition
+        piece.style.top = `${targetTop}px`;
+        piece.style.left = `${targetLeft}px`;
+
+        // After transition, move the piece in the DOM
+        setTimeout(() => {
+            toTile.appendChild(piece);
+            piece.style.top = '50%';
+            piece.style.left = '50%';
+        }, 300); // Match the CSS transition duration
+    }
+
     clearKingInCheck();
 
     // Check if the opponent is in check after the move
@@ -410,6 +496,8 @@ function movePiece(fromTile, toTile) {
     } else {
         moveHistory.push({ 
             notation: moveNotation, 
+            from: convertTileIdToChessNotation(moveFrom),
+            to: convertTileIdToChessNotation(moveTo),
             isCheck: false 
         });
         displayTurn();
@@ -455,7 +543,7 @@ function onTileClick(event) {
             clearPotentialMoves(); // Clear potential moves
             selectedPiece = null;
             selectedTile = null;
-            displayMessage('Invalid move!'); // Display invalid move message
+            // Display specific invalid move message
         }
     } else {
         // Select a piece
@@ -588,7 +676,7 @@ function onDrop(event) {
             movePiece(fromTile, toTile);
             displayMessage('');
         } else {
-            displayMessage('Invalid move!');
+            // Display specific invalid move message
         }
     }
     
@@ -602,7 +690,7 @@ function onDrop(event) {
     onDragEnd(event);
 }
 
-// Add drag and drop event listeners to the pieces
+// Optimize event listeners to prevent unnecessary reflows
 function addDragAndDropEventListeners() {
     // First, remove any existing listeners to prevent duplicates
     const pieces = document.querySelectorAll('.white-piece, .black-piece');
@@ -617,6 +705,8 @@ function addDragAndDropEventListeners() {
     tiles.forEach(tile => {
         tile.addEventListener('dragover', onDragOver);
         tile.addEventListener('drop', onDrop);
+        tile.style.position = 'relative'; // Ensure tiles are positioned correctly
+        tile.style.overflow = 'hidden'; // Prevent pieces from overflowing
     });
 }
 
@@ -714,7 +804,6 @@ function initializeGame() {
     updateTurnHighlight();
 }
 
-// Start the game
 initializeGame();
 
 document.getElementById('settings-toggle').addEventListener('click', function() {
@@ -912,279 +1001,6 @@ function preventHintClicksFromSelectingPiece() {
 
 // Removed duplicated applySettings function to prevent syntax errors
 
-function saveGameToHistory() {
-    const gameData = {
-        id: Date.now(),
-        date: new Date().toLocaleString(),
-        moves: moveHistory,
-        result: document.getElementById('game-over-message').textContent
-    };
-    
-    const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
-    savedGames.push(gameData);
-    localStorage.setItem('chessGameHistory', JSON.stringify(savedGames));
-    updateGameHistorySelector();
-}
-
-function updateGameHistorySelector() {
-    const selector = document.getElementById('game-select');
-    const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
-    
-    selector.innerHTML = '<option value="">Select a game...</option>';
-    
-    savedGames.forEach(game => {
-        const option = document.createElement('option');
-        option.value = game.id;
-        option.textContent = `${game.date} - ${game.result}`;
-        selector.appendChild(option);
-    });
-}
-
-function startReplay(gameId) {
-    const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
-    const game = savedGames.find(g => g.id === parseInt(gameId));
-    if (!game) return;
-
-    document.querySelector('.history-board').style.display = 'block';
-    
-    isReplaying = true;
-    replayIndex = -1;
-    // Store the current game's moves and use game moves for replay
-    activeGameMoves = moveHistory;
-    moveHistory = game.moves;
-    
-    initializeReplayBoard();
-    placePiecesOnReplayBoard();
-    
-    document.getElementById('replay-controls').style.display = 'flex';
-    displayReplayMoveList();
-}
-
-// Update game selector to hide board when no game is selected
-document.getElementById('game-select').addEventListener('change', function(e) {
-    const historyBoard = document.querySelector('.history-board');
-    if (!e.target.value) {
-        historyBoard.style.display = 'none';
-        document.getElementById('replay-controls').style.display = 'none';
-        document.getElementById('replay-move-list').innerHTML = '';
-    }
-});
-
-function initializeReplayBoard() {
-    const board = document.getElementById('replay-board');
-    board.innerHTML = '';
-
-    for (let i = 0; i < 64; i++) {
-        const tile = document.createElement('div');
-        tile.className = (Math.floor(i / 8) + i) % 2 === 0 ? 'white-tile' : 'black-tile';
-        tile.id = `replay-tile-${i}`;
-        board.appendChild(tile);
-    }
-}
-
-function placePiecesOnReplayBoard() {
-    const pieces = [
-        '\u265C', '\u265E', '\u265D', '\u265B', '\u265A', '\u265D', '\u265E', '\u265C',
-        '\u265F', '\u265F', '\u265F', '\u265F', '\u265F', '\u265F', '\u265F', '\u265F',
-        '', '', '', '', '', '', '', '',
-        '', '', '', '', '', '', '', '',
-        '', '', '', '', '', '', '', '',
-        '', '', '', '', '', '', '', '',
-        '\u2659', '\u2659', '\u2659', '\u2659', '\u2659', '\u2659', '\u2659', '\u2659',
-        '\u2656', '\u2658', '\u2657', '\u2655', '\u2654', '\u2657', '\u2658', '\u2656'
-    ];
-
-    for (let i = 0; i < 64; i++) {
-        const tile = document.getElementById(`replay-tile-${i}`);
-        const piece = pieces[i];
-        if (piece) {
-            const pieceElement = document.createElement('div');
-            pieceElement.className = i < 16 ? 'black-piece' : 'white-piece';
-            pieceElement.textContent = piece;
-            tile.appendChild(pieceElement);
-        }
-    }
-}
-
-function displayReplayMoveList() {
-    const moveList = document.getElementById('replay-move-list');
-    moveList.innerHTML = moveHistory.map((move, index) => {
-        let moveText = '';
-        if (index % 2 === 0) {
-            moveText += `${Math.floor(index/2 + 1)}. `;
-        }
-        moveText += move.notation;
-        if (move.isCheckmate) {
-            moveText += '#';
-        } else if (move.isCheck) {
-            moveText += '+';
-        }
-        return `<div class="replay-move" data-index="${index}">${moveText}</div>`;
-    }).join('');
-
-    // Add click handlers
-    document.querySelectorAll('.replay-move').forEach(move => {
-        move.addEventListener('click', () => {
-            replayIndex = parseInt(move.dataset.index);
-            updateReplayPosition();
-        });
-    });
-}
-
-function updateReplayPosition() {
-    initializeReplayBoard();
-    placePiecesOnReplayBoard();
-    
-    // Apply moves up to current index
-    for (let i = 0; i <= replayIndex; i++) {
-        const move = moveHistory[i];
-        const notation = move.notation;
-        const [from, to] = findMovePositions(notation);
-        
-        if (from && to) {
-            const fromTile = document.getElementById(`replay-tile-${from}`);
-            const toTile = document.getElementById(`replay-tile-${to}`);
-            const piece = fromTile.querySelector('.white-piece, .black-piece');
-            
-            if (piece) {
-                // Handle captures
-                if (toTile.hasChildNodes()) {
-                    toTile.innerHTML = '';
-                }
-                toTile.appendChild(piece);
-            }
-        }
-    }
-    
-    // Highlight current move in move list
-    document.querySelectorAll('.replay-move').forEach((moveElement, index) => {
-        if (index === replayIndex) {
-            moveElement.style.backgroundColor = '#ffeb3b';
-            moveElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-            moveElement.style.backgroundColor = '';
-        }
-    });
-}
-
-function findMovePositions(notation) {
-    // Extract destination square
-    const destMatch = notation.match(/[a-h][1-8]$/);
-    if (!destMatch) return [null, null];
-    
-    const destination = destMatch[0];
-    const toIndex = notationToIndex(destination);
-    
-    // Find source piece by scanning the board
-    const pieces = document.querySelectorAll('#replay-board .white-piece, #replay-board .black-piece');
-    let fromIndex = null;
-    
-    for (const piece of pieces) {
-        if (piece.textContent === notation[0]) {
-            const tile = piece.parentElement;
-            const currentIndex = parseInt(tile.id.split('-')[1]);
-            
-            // Verify this piece could make this move
-            if (canReachSquare(currentIndex, toIndex, piece.textContent)) {
-                fromIndex = currentIndex;
-                break;
-            }
-        }
-    }
-    
-    return [fromIndex, toIndex];
-}
-
-function canReachSquare(from, to, pieceType) {
-    const fromRow = Math.floor(from / 8);
-    const fromCol = from % 8;
-    const toRow = Math.floor(to / 8);
-    const toCol = to % 8;
-    
-    const rowDiff = Math.abs(toRow - fromRow);
-    const colDiff = Math.abs(toCol - fromCol);
-    
-    switch (pieceType) {
-        case '♔':
-        case '♚': // King
-            return rowDiff <= 1 && colDiff <= 1;
-        case '♕':
-        case '♛': // Queen
-            return rowDiff === colDiff || rowDiff === 0 || colDiff === 0;
-        case '♖':
-        case '♜': // Rook
-            return rowDiff === 0 || colDiff === 0;
-        case '♗':
-        case '♝': // Bishop
-            return rowDiff === colDiff;
-        case '♘':
-        case '♞': // Knight
-            return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
-        default: // Pawn
-            return true; // Simplified for now
-    }
-}
-
-function stopReplay() {
-    isReplaying = false;
-    document.getElementById('replay-controls').style.display = 'none';
-    document.getElementById('turn').style.display = 'block';
-    // Restore the active game's moves
-    moveHistory = activeGameMoves;
-    displayMoveHistory(); // Update the main game's move history
-    initializeBoard();
-    placePieces();
-}
-
-document.getElementById('history-toggle').addEventListener('click', function() {
-    const historyOverlay = document.getElementById('history-overlay');
-    historyOverlay.classList.remove('hidden');
-    historyOverlay.style.display = 'flex';
-    updateGameHistorySelector();
-});
-
-document.getElementById('close-history').addEventListener('click', function() {
-    const historyOverlay = document.getElementById('history-overlay');
-    historyOverlay.classList.add('hidden');
-    historyOverlay.style.display = 'none';
-    stopReplay();
-});
-
-document.getElementById('replay-game').addEventListener('click', function() {
-    const gameId = document.getElementById('game-select').value;
-    if (gameId) {
-        startReplay(gameId);
-    }
-});
-
-document.getElementById('delete-game').addEventListener('click', function() {
-    const gameId = document.getElementById('game-select').value;
-    if (gameId && confirm('Are you sure you want to delete this game?')) {
-        const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
-        const updatedGames = savedGames.filter(g => g.id !== parseInt(gameId));
-        localStorage.setItem('chessGameHistory', JSON.stringify(updatedGames));
-        updateGameHistorySelector();
-    }
-});
-
-document.getElementById('prev-move').addEventListener('click', function() {
-    if (replayIndex > 0) {
-        replayIndex--;
-        updateReplayPosition();
-    }
-});
-
-document.getElementById('next-move').addEventListener('click', function() {
-    if (replayIndex < moveHistory.length - 1) {
-        replayIndex++;
-        updateReplayPosition();
-    }
-});
-
-document.getElementById('play-pause').addEventListener('click', playPauseReplay);
-
-document.getElementById('stop-replay').addEventListener('click', stopReplay);
-
 // Add CSS for current move highlight
 const replayStyle = document.createElement('style');
 replayStyle.innerHTML = `
@@ -1199,6 +1015,14 @@ document.head.appendChild(replayStyle);
 function updateTurnHighlight() {
     document.body.classList.toggle('white-turn', isWhiteTurn);
     document.body.classList.toggle('black-turn', !isWhiteTurn);
+}
+
+// Convert tile ID to chess notation (e.g., 'tile-0' -> 'a8')
+function convertTileIdToChessNotation(tileId) {
+    const index = parseInt(tileId.split('-')[1]);
+    const file = String.fromCharCode(97 + (index % 8)); // 'a' + column index
+    const rank = 8 - Math.floor(index / 8); // 8 - row index
+    return `${file}${rank}`;
 }
 
 
