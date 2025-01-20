@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('select-game').addEventListener('change', loadSelectedGame);
     document.getElementById('start-simulation').addEventListener('click', startSimulation);
     document.getElementById('reset-simulation').addEventListener('click', resetSimulation);
+    document.getElementById('next-move').addEventListener('click', nextMove);
+    document.getElementById('prev-move').addEventListener('click', previousMove);
 });
 
 function displayGameHistory() {
@@ -60,11 +62,27 @@ function loadSelectedGame(event) {
 
 function displayMoveList(moves) {
     const moveList = document.getElementById('move-list');
-    moveList.innerHTML = ''; // Clear existing moves
+    moveList.innerHTML = '';
 
     moves.forEach((move, index) => {
         const listItem = document.createElement('li');
-        listItem.textContent = `${index + 1}. ${move.notation}`;
+        const moveNumber = Math.floor(index / 2) + 1;
+        const isWhiteMove = index % 2 === 0;
+        
+        // Format: "1. ♙e2→e4" or "1... ♟e7→e5"
+        const notation = move.notation;
+        const from = move.from || '';
+        const to = move.to || '';
+        const isCapture = notation.includes('x');
+        
+        let formattedMove = `${moveNumber}${isWhiteMove ? '.' : '...'} `;
+        formattedMove += `${notation.charAt(0)} ${from}→${to}`;
+        if (isCapture) formattedMove += ' (capture)';
+        if (move.isCheck) formattedMove += ' +';
+        if (move.isCheckmate) formattedMove += ' #';
+        
+        listItem.textContent = formattedMove;
+        listItem.style.color = isWhiteMove ? '#000' : '#666';
         moveList.appendChild(listItem);
     });
 }
@@ -138,6 +156,7 @@ function startSimulation() {
     }
 
     simulationIndex = 0;
+    clearInterval(simulationInterval);
     simulationInterval = setInterval(() => {
         if (simulationIndex >= moves.length) {
             clearInterval(simulationInterval);
@@ -145,30 +164,130 @@ function startSimulation() {
         }
         applyMoveToSimulatedBoard(moves[simulationIndex]);
         simulationIndex++;
+        updateNavigationButtons(moves.length);
     }, 1000); // Adjust the speed as needed
 }
 
 function applyMoveToSimulatedBoard(move) {
-    if (!move.from || !move.to) {
-        console.error('Move data is incomplete:', move);
+    // Handle checkmate moves
+    if (move.isCheckmate) {
+        const from = move.from;
+        const to = move.to;
+        
+        if (!from || !to) {
+            // Try to extract from notation (e.g., "♛h4")
+            const notation = move.notation;
+            const dest = notation.match(/[a-h][1-8]/)?.[0];
+            if (!dest) {
+                console.error('Cannot parse checkmate move:', move);
+                return;
+            }
+            
+            // Find the piece that made the checkmate
+            const pieces = document.querySelectorAll('#simulated-chessboard .white-piece, #simulated-chessboard .black-piece');
+            const checkmatePiece = Array.from(pieces).find(p => p.textContent === notation.charAt(0));
+            if (!checkmatePiece) {
+                console.error('Checkmate piece not found:', notation.charAt(0));
+                return;
+            }
+
+            const fromTile = checkmatePiece.parentElement;
+            const toTile = document.getElementById(`sim-tile-${convertChessNotationToIndex(dest)}`);
+            
+            if (fromTile && toTile) {
+                // Handle capture if present
+                const capturedPiece = toTile.querySelector('.white-piece, .black-piece');
+                if (capturedPiece) toTile.removeChild(capturedPiece);
+                
+                // Move the piece
+                toTile.appendChild(checkmatePiece);
+                
+                // Add special checkmate highlighting
+                document.querySelectorAll('.move-from, .move-to, .checkmate-move').forEach(el => {
+                    el.classList.remove('move-from', 'move-to', 'checkmate-move');
+                });
+                fromTile.classList.add('move-from');
+                toTile.classList.add('move-to', 'checkmate-move');
+                
+                // Update move list highlighting
+                updateMoveHighlight(true);
+            }
+            return;
+        }
+    }
+
+    // Handle regular moves
+    const notation = move.notation;
+    const from = move.from;
+    const to = move.to;
+
+    if (!from || !to) {
+        console.error('Move lacks from/to information:', move);
         return;
     }
 
-    const fromTile = convertChessNotationToIndex(move.from);
-    const toTile = convertChessNotationToIndex(move.to);
+    // Highlight the source and destination squares
+    const fromTile = document.getElementById(`sim-tile-${convertChessNotationToIndex(from)}`);
+    const toTile = document.getElementById(`sim-tile-${convertChessNotationToIndex(to)}`);
 
-    const fromSimTile = document.getElementById(`sim-tile-${fromTile}`);
-    const toSimTile = document.getElementById(`sim-tile-${toTile}`);
+    // Remove previous highlights
+    document.querySelectorAll('.move-from, .move-to').forEach(el => {
+        el.classList.remove('move-from', 'move-to');
+    });
 
-    const piece = fromSimTile.querySelector('.white-piece, .black-piece');
-    if (piece) {
-        toSimTile.appendChild(piece);
-    } else {
-        console.warn(`No piece found on tile-${fromTile} to move.`);
+    // Add new highlights
+    fromTile?.classList.add('move-from');
+    toTile?.classList.add('move-to');
+
+    // Handle capture
+    if (notation.includes('x')) {
+        const existingPiece = toTile?.querySelector('.white-piece, .black-piece');
+        if (existingPiece) {
+            toTile.removeChild(existingPiece);
+        }
     }
+
+    // Move the piece
+    const movingPiece = fromTile?.querySelector('.white-piece, .black-piece');
+    if (movingPiece && toTile) {
+        toTile.appendChild(movingPiece);
+    }
+
+    // Update move list highlighting
+    updateMoveHighlight();
 }
 
-// Update convertChessNotationToIndex to handle invalid notation gracefully
+// Helper function to update move highlighting
+function updateMoveHighlight(isCheckmate = false) {
+    const moveList = document.getElementById('move-list');
+    const moves = moveList.getElementsByTagName('li');
+    Array.from(moves).forEach((move, index) => {
+        move.classList.remove('current-move');
+        if (index === simulationIndex) {
+            move.classList.add('current-move');
+            if (isCheckmate) move.classList.add('checkmate');
+            move.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    });
+}
+
+// Add CSS for checkmate highlight
+const style = document.createElement('style');
+style.innerHTML = `
+    .checkmate-move {
+        background-color: rgba(255, 0, 0, 0.3) !important;
+        border: 3px solid red !important;
+        animation: checkmate-pulse 2s infinite;
+    }
+    
+    @keyframes checkmate-pulse {
+        0% { border-color: red; }
+        50% { border-color: #ff8080; }
+        100% { border-color: red; }
+    }
+`;
+document.head.appendChild(style);
+
 function convertChessNotationToIndex(notation) {
     if (typeof notation !== 'string' || notation.length !== 2) {
         console.error('Invalid notation:', notation);
@@ -193,6 +312,11 @@ function resetSimulation() {
     clearInterval(simulationInterval);
     simulationIndex = 0;
     initializeSimulatedBoard();
+    updateNavigationButtons(
+        document.getElementById('select-game').value ? 
+        JSON.parse(localStorage.getItem('chessGameHistory') || '[]')[document.getElementById('select-game').value].moves.length : 
+        0
+    );
 }
 
 function clearGameDetails() {
@@ -224,4 +348,44 @@ function displayMoveHistory() {
 
     const toggleButton = document.getElementById('toggle-move-history');
     toggleButton.textContent = showFullHistory ? 'Show Last 5 Moves' : 'Show Full History';
+}
+
+function nextMove() {
+    const selectGame = document.getElementById('select-game');
+    const gameIndex = selectGame.value;
+    if (gameIndex === "") return;
+
+    const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
+    const moves = savedGames[gameIndex].moves;
+
+    if (simulationIndex < moves.length) {
+        applyMoveToSimulatedBoard(moves[simulationIndex]);
+        simulationIndex++;
+        updateNavigationButtons(moves.length);
+    }
+}
+
+function previousMove() {
+    if (simulationIndex > 0) {
+        simulationIndex--;
+        // Reset board and replay up to current index
+        initializeSimulatedBoard();
+        const selectGame = document.getElementById('select-game');
+        const gameIndex = selectGame.value;
+        const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
+        const moves = savedGames[gameIndex].moves;
+        
+        for (let i = 0; i < simulationIndex; i++) {
+            applyMoveToSimulatedBoard(moves[i]);
+        }
+        updateNavigationButtons(moves.length);
+    }
+}
+
+function updateNavigationButtons(totalMoves) {
+    const prevButton = document.getElementById('prev-move');
+    const nextButton = document.getElementById('next-move');
+    
+    prevButton.disabled = simulationIndex === 0;
+    nextButton.disabled = simulationIndex >= totalMoves;
 }

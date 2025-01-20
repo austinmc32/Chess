@@ -12,6 +12,7 @@ function initializeBoard() {
         const tile = document.createElement('div');
         tile.className = (Math.floor(i / 8) + i) % 2 === 0 ? 'white-tile' : 'black-tile';
         tile.id = `tile-${i}`;
+        tile.setAttribute('tabindex', '-1'); // Prevent focus
         board.appendChild(tile);
     }
 }
@@ -59,6 +60,23 @@ let hasWhiteKingsideRookMoved = false; // h1 rook
 let hasWhiteQueensideRookMoved = false; // a1 rook
 let hasBlackKingsideRookMoved = false; // h8 rook
 let hasBlackQueensideRookMoved = false; // a8 rook
+
+let isReplaying = false; // Define the isReplaying variable
+
+// Function to save the game to history
+function saveGameToHistory() {
+    const savedGames = JSON.parse(localStorage.getItem('chessGameHistory') || '[]');
+    const gameResult = isWhiteTurn ? 'Black wins' : 'White wins'; // Determine the game result
+    const gameDate = new Date().toLocaleString(); // Get the current date and time
+
+    savedGames.push({
+        date: gameDate,
+        result: gameResult,
+        moves: moveHistory
+    });
+
+    localStorage.setItem('chessGameHistory', JSON.stringify(savedGames));
+}
 
 // Handle piece click events
 function onPieceClick(event) {
@@ -237,16 +255,24 @@ function isValidMove(fromTile, toTile, isCheckValidation = false) {
             isValidPieceMove = (rowDiff === colDiff || rowDiff === 0 || colDiff === 0);
             break;
             
-        case '\u2654': // King
-        case '\u265A':
+        case '\u2654': // White king
+        case '\u265A': // Black king
             // Normal king moves
             if (rowDiff <= 1 && colDiff <= 1) {
                 isValidPieceMove = true;
             }
             // Castling
             else if (rowDiff === 0 && colDiff === 2) {
-                // Additional castling logic can be added here
-                isValidPieceMove = true;
+                // Ensure the king and the rook have not moved
+                if (isWhite) {
+                    if (!hasWhiteKingMoved && ((toCol > fromCol && !hasWhiteKingsideRookMoved) || (toCol < fromCol && !hasWhiteQueensideRookMoved))) {
+                        isValidPieceMove = true;
+                    }
+                } else {
+                    if (!hasBlackKingMoved && ((toCol > fromCol && !hasBlackKingsideRookMoved) || (toCol < fromCol && !hasBlackQueensideRookMoved))) {
+                        isValidPieceMove = true;
+                    }
+                }
             }
             break;
     }
@@ -388,7 +414,8 @@ function movePiece(fromTile, toTile) {
             toTile.appendChild(piece);
             rookToTile.appendChild(rook);
             clearKingInCheck();
-            switchTurn();
+            isWhiteTurn = !isWhiteTurn; // Switch turns after castling
+            updateTurnHighlight();
             displayMoveHistory();
             return;
         }
@@ -445,7 +472,9 @@ function movePiece(fromTile, toTile) {
             moveHistory.push({ 
                 notation: moveNotation, 
                 isCheck: true, 
-                isCheckmate: true 
+                isCheckmate: true,
+                from: convertTileIdToChessNotation(moveFrom),  // Add these
+                to: convertTileIdToChessNotation(moveTo)       // two lines
             });
         } else {
             moveHistory.push({ 
@@ -489,6 +518,9 @@ function clearHintHighlight() {
 function onTileClick(event) {
     const tile = event.target.closest('.white-tile, .black-tile');
     if (!tile) return;
+
+    // Prevent cursor blinking on empty tile click
+    event.preventDefault();
 
     if (selectedPiece) {
         // Try to move the piece
@@ -557,6 +589,14 @@ function addPieceEventListeners() {
     const pieces = document.querySelectorAll('.white-piece, .black-piece');
     pieces.forEach(piece => {
         piece.addEventListener('click', onPieceClick);
+        piece.addEventListener('mousedown', (event) => {
+            if ((isWhiteTurn && piece.classList.contains('white-piece')) || (!isWhiteTurn && piece.classList.contains('black-piece'))) {
+                piece.style.cursor = 'grabbing';
+            }
+        });
+        piece.addEventListener('mouseup', (event) => {
+            piece.style.cursor = 'grab';
+        });
     });
 }
 
@@ -751,6 +791,7 @@ function restartGame() {
 
 // Add event listener for the restart button
 document.getElementById('restart-button').addEventListener('click', restartGame);
+document.getElementById('restart').addEventListener('click', restartGame); // Ensure the restart button in the main UI also works
 
 // Initialize the game
 function initializeGame() {
@@ -758,6 +799,7 @@ function initializeGame() {
     initializeBoard();
     placePieces();
     addTileEventListeners();
+    addPieceEventListeners(); // Ensure piece event listeners are added
     addDragAndDropEventListeners();
     
     displayTurn();
@@ -798,12 +840,19 @@ function applySettings() {
     const whitePieceColor = document.getElementById('white-piece-color').value;
     const blackPieceColor = document.getElementById('black-piece-color').value;
     const highlightColor = document.getElementById('highlight-color').value; // New
+    const borderWidth = document.getElementById('board-border-width').value;
+    const borderColor = document.getElementById('board-border-color').value;
+
 
     document.documentElement.style.setProperty('--white-tile-color', whiteTileColor);
     document.documentElement.style.setProperty('--black-tile-color', blackTileColor);
     document.documentElement.style.setProperty('--white-piece-color', whitePieceColor);
     document.documentElement.style.setProperty('--black-piece-color', blackPieceColor);
     document.documentElement.style.setProperty('--potential-move-color', highlightColor); // Apply highlight color
+    document.documentElement.style.setProperty('--board-border-width', `${borderWidth}px`);
+    document.documentElement.style.setProperty('--board-border-color', borderColor);
+    document.getElementById('border-width-value').textContent = `${borderWidth}px`;
+
 }
 
 function savePreset() {
@@ -820,7 +869,10 @@ function savePreset() {
         blackTileColor: document.getElementById('black-tile-color').value,
         whitePieceColor: document.getElementById('white-piece-color').value,
         blackPieceColor: document.getElementById('black-piece-color').value,
-        highlightColor: document.getElementById('highlight-color').value // Save highlight color
+        highlightColor: document.getElementById('highlight-color').value, // Save highlight color
+        boardBorderWidth: document.getElementById('board-border-width').value,
+        boardBorderColor: document.getElementById('board-border-color').value
+
     };
 
     localStorage.setItem('chessPresets', JSON.stringify(presets));
@@ -857,6 +909,9 @@ function loadSelectedPreset() {
         document.getElementById('white-piece-color').value = preset.whitePieceColor;
         document.getElementById('black-piece-color').value = preset.blackPieceColor;
         document.getElementById('highlight-color').value = preset.highlightColor || '#ffff00'; // Load highlight color
+        document.getElementById('board-border-width').value = preset.boardBorderWidth || 3;
+        document.getElementById('board-border-color').value = preset.boardBorderColor || '#333333';
+        document.getElementById('border-width-value').textContent = `${preset.boardBorderWidth || 3}px`;
         document.getElementById('preset-name').value = presetName;
         applySettings();
     }
